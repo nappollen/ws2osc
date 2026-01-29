@@ -35,25 +35,36 @@ async function main() {
         console.log(`OSCQuery server: http://localhost:${oscQueryPort}`);
         console.log('============================\n');
 
-        wsServer.on('connect', async ws => wsServer.send(ws, {
-            type: 'server_info',
-            services: oscQueryServer.getServices().map((service, index) => ({
-                index: index,
-                address: service.address,
-                query: service.port,
-                name: service.hostInfo?.name || 'unknown',
-                osc: service.hostInfo?.oscPort || 0,
-            })),
-            details: {
-                ws: wsPort,
-                osc: actualOscPort,
-                query: oscQueryPort
-            }
-        }));
+        wsServer.on('connect', async ws => {
+            console.log('New WebSocket client connected');
+            wsServer.send(ws, {
+                type: 'server_info',
+                services: oscQueryServer.getServices().map((service, index) => ({
+                    index: index,
+                    address: service.address,
+                    query: service.port,
+                    name: service.hostInfo?.name || 'unknown',
+                    osc: service.hostInfo?.oscPort || 0,
+                })),
+                details: {
+                    ws: wsPort,
+                    osc: actualOscPort,
+                    query: oscQueryPort
+                }
+            })
+        });
 
         // Pont: WebSocket -> OSC
         // Format attendu: { address: "/test", args: [1, 2, "hello"] }
-        wsServer.on('message', async (data, ws) => {
+        wsServer.on('message', async (raw, ws) => {
+            let data: any;
+            try {
+                data = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(raw.toString());
+            } catch (error) {
+                console.error('Invalid JSON received from WS client:', error);
+                return;
+            }
+            
             if (data.type === 'get_parameters') {
                 // Request to get service parameters
                 try {

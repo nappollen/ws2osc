@@ -44,7 +44,17 @@ export class OSCServer extends EventEmitter {
     const client = new Client(host, port);
     try {
       const message = new Message(address, ...args);
-      client.send(message);
+      await new Promise<void>((resolve, reject) => {
+        client.send(message, (err) => {
+          if (err) {
+            console.error('Error sending OSC message:', err);
+            reject(err);
+          } else {
+            console.log(`OSC message sent successfully to ${host}:${port}`);
+            resolve();
+          }
+        });
+      });
     } catch (error) {
       console.error('Error sending OSC message:', error);
     } finally {
