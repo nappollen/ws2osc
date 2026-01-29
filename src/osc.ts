@@ -1,42 +1,36 @@
-import * as osc from 'node-osc';
-import { getFreePort } from './utils/network';
+import { Server, Client, ArgumentType, RequestInfo, Message } from 'node-osc';
+import EventEmitter from 'events';
 
-export class OSCServer {
-  private oscServer: osc.Server | null = null;
-  private oscClient: osc.Client | null = null;
+export class OSCServer extends EventEmitter {
+  private server: Server | null = null;
   private port: number;
-  private onMessageCallback?: (address: string, args: any[], host: string, port: number) => void;
 
   constructor(port?: number) {
+    super();
     this.port = port || 0;
   }
 
   async start(): Promise<void> {
     // Si pas de port spécifié, trouver un port disponible
-    if (this.port === 0) {
-      this.port = await getFreePort();
-    }
-
     return new Promise((resolve, reject) => {
       try {
-        this.oscServer = new osc.Server(this.port, '127.0.0.1'); // Bind sur localhost au lieu de 0.0.0.0
+        this.server = new Server(this.port, '0.0.0.0');
 
-        this.oscServer.on('listening', () => {
+        this.server.on('listening', () => {
           console.log(`OSC server listening on port ${this.port}`);
           resolve();
         });
 
-        this.oscServer.on('message', (msg: any[], rinfo: any) => {
-          if (this.onMessageCallback && msg.length > 0) {
-            const address = msg[0];
-            const args = msg.slice(1);
-            const host = rinfo?.address || 'unknown';
-            const port = rinfo?.port || 0;
-            this.onMessageCallback(address, args, host, port);
-          }
+        this.server.on('message', (message: [string, ...ArgumentType[]], rinfo: RequestInfo) => {
+          if (message.length <= 0) return;
+          const address = message[0];
+          const args = message.slice(1);
+          const host = rinfo?.address || 'unknown';
+          const port = rinfo?.port || 0;
+          this.emit('message', address, args, host, port);
         });
 
-        this.oscServer.on('error', (error: Error) => {
+        this.server.on('error', (error: Error) => {
           console.error('OSC server error:', error);
           reject(error);
         });
@@ -46,42 +40,24 @@ export class OSCServer {
     });
   }
 
-  sendTo(address: string, args: any[], host: string, port: number): void {
+  async sendTo(address: string, args: ArgumentType[], host: string, port: number): Promise<void> {
+    const client = new Client(host, port);
     try {
-      const client = new osc.Client(host, port);
-      
-      // node-osc expects a Message with address and args array
-      const message = new osc.Message(address);
-      if (args && args.length > 0) {
-        args.forEach(arg => message.append(arg));
-      }
-      
-      client.send(message, (error?: Error) => {
-        if (error) {
-          console.error('Error sending OSC message:', error);
-        }
-        client.close();
-      });
+      const message = new Message(address, ...args);
+      client.send(message);
     } catch (error) {
       console.error('Error sending OSC message:', error);
+    } finally {
+      client.close();
     }
   }
 
   stop(): void {
-    if (this.oscServer) {
-      this.oscServer.close();
-      console.log('OSC server stopped');
-    }
-    if (this.oscClient) {
-      this.oscClient.close();
-    }
+    this.server?.close();
+    console.log('OSC server stopped');
   }
 
   getPort(): number {
     return this.port;
-  }
-
-  onMessage(callback: (address: string, args: any[], host: string, port: number) => void): void {
-    this.onMessageCallback = callback;
   }
 }

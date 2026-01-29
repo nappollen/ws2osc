@@ -8,8 +8,8 @@ import { getFreePort } from './src/utils/network.js';
 async function main() {
     // Initialiser les serveurs
     const wsPort = 58942;
-    const oscPort = 0; // Auto-detect port
-    const oscQueryPort = await getFreePort();
+    const oscPort = 9015 // await getFreePort(); // Auto-detect port
+    const oscQueryPort = await getFreePort(); // Auto-detect port
 
     const wsServer = new WSServer(wsPort);
     const oscServer = new OSCServer(oscPort);
@@ -19,7 +19,12 @@ async function main() {
         await oscServer.start();
         const actualOscPort = oscServer.getPort();
 
-        const oscQueryServer = new OSCQueryServer(oscQueryPort, actualOscPort, wsServer);
+        const oscQueryServer = new OSCQueryServer(
+            oscQueryPort,
+            '127.0.0.1',
+            actualOscPort,
+            wsServer
+        );
         await oscQueryServer.start();
 
         await wsServer.start();
@@ -30,8 +35,7 @@ async function main() {
         console.log(`OSCQuery server: http://localhost:${oscQueryPort}`);
         console.log('============================\n');
 
-        // Envoyer les infos des serveurs et services via WebSocket périodiquement
-        setInterval(() => wsServer.broadcast({
+        wsServer.on('connect', async ws => wsServer.send(ws, {
             type: 'server_info',
             services: oscQueryServer.getServices().map((service, index) => ({
                 index: index,
@@ -45,11 +49,11 @@ async function main() {
                 osc: actualOscPort,
                 query: oscQueryPort
             }
-        }), 1000); // Envoyer toutes les secondes
+        }));
 
         // Pont: WebSocket -> OSC
         // Format attendu: { address: "/test", args: [1, 2, "hello"] }
-        wsServer.onMessage(async (data, ws) => {
+        wsServer.on('message', async (data, ws) => {
             if (data.type === 'get_parameters') {
                 // Request to get service parameters
                 try {
@@ -97,18 +101,13 @@ async function main() {
         });
 
         // Pont: OSC -> WebSocket
-        oscServer.onMessage((path, args, host, port) => wsServer.broadcast({
+        oscServer.on('message', (path, args, host, port) => wsServer.broadcast({
             type: 'receive_osc',
             path: path,
             args: args,
             host: host,
             port: port
         }));
-
-        // Ajouter quelques nodes OSCQuery d'exemple
-        oscQueryServer.addNode('/', {
-            access: OSCQAccess.WRITEONLY,
-        });
 
         // Gestion de l'arrêt propre
         process.on('SIGINT', () => {

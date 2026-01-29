@@ -10,13 +10,16 @@ export class OSCQueryServer {
     private services: DiscoveredService[] = [];
     private wsServer?: WSServer;
 
-    constructor(port?: number, oscPort: number = 9000, wsServer?: WSServer) {
+    constructor(port?: number, oscIp: string = '127.0.0.1', oscPort: number = 9000, wsServer?: WSServer) {
         this.oscPort = oscPort;
         this.wsServer = wsServer;
+        let e = 'ws2osc_' + randomBytes(4).toString('hex');
         this.server = new OSCQuery({
             httpPort: port,
             oscPort: this.oscPort,
-            serviceName: 'ws2osc_' + randomBytes(4).toString('hex'),
+            oscIp: oscIp,
+            serviceName: e,
+            oscQueryHostName: e
         });
         this.port = port || 0; // Will be set after start()
         this.discovery = new OSCQueryDiscovery();
@@ -71,57 +74,11 @@ export class OSCQueryServer {
         this.port = hostInfo.wsPort || 0; // Get actual HTTP port
         console.log(`OSCQuery server listening on port ${hostInfo.wsPort}`);
 
+        this.server.addMethod('/', { access: OSCQAccess.READWRITE });
+        
         // Start discovery
         this.discovery.start();
         console.log('OSCQuery discovery started');
-    }
-
-    addNode(path: string, options: any): void {
-        // Convert simple options to oscquery format
-        const methodDesc: any = {
-            description: options.DESCRIPTION || options.description,
-            access: options.ACCESS || OSCQAccess.READWRITE,
-            arguments: []
-        };
-
-        // Convert TYPE to arguments array
-        if (options.TYPE) {
-            const types = Array.isArray(options.TYPE)
-                ? options.TYPE
-                : [options.TYPE];
-            for (var i = 0; i < types.length; i++) {
-                const arg: any = { type: this.convertType(types[i]) };
-                if (options.RANGE && options.RANGE[i])
-                    arg.range = options.RANGE[i];
-                methodDesc.arguments.push(arg);
-            }
-        }
-
-        this.server.addMethod(path, methodDesc);
-        this.updateNode(path, options);
-    }
-
-    private convertType(type: string): OSCTypeSimple {
-        const typeMap: { [key: string]: OSCTypeSimple } = {
-            'f': OSCTypeSimple.FLOAT,
-            'i': OSCTypeSimple.INT,
-            's': OSCTypeSimple.STRING,
-            'b': OSCTypeSimple.BLOB,
-            'T': OSCTypeSimple.TRUE,
-            'F': OSCTypeSimple.FALSE
-        };
-        return typeMap[type] || OSCTypeSimple.FLOAT;
-    }
-
-    removeNode(path: string): void {
-        this.server.removeMethod(path);
-    }
-
-    updateNode(path: string, options: any): void {
-        // Update values
-        if (!options.VALUE || !Array.isArray(options.VALUE)) return;
-        for (let i = 0; i < options.VALUE.length; i++)
-            this.server.setValue(path, i, options.VALUE[i]);
     }
 
     stop(): void {

@@ -1,13 +1,14 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { getFreePort } from './utils/network';
+import EventEmitter from 'events';
 
-export class WSServer {
+export class WSServer extends EventEmitter {
     private wss: WebSocketServer | null = null;
     private clients: Set<WebSocket> = new Set();
-    private onMessageCallback?: (data: any, ws: WebSocket) => void;
     private port: number;
 
     constructor(port?: number) {
+        super();
         this.port = port || 0;
     }
 
@@ -27,33 +28,18 @@ export class WSServer {
                 });
 
                 this.wss.on('connection', (ws: WebSocket) => {
-                    console.log('New WebSocket client connected');
                     this.clients.add(ws);
+                    this.emit('connect', ws);
 
                     ws.on('message', (data: Buffer) => {
-                        if (this.onMessageCallback) {
-                            try {
-                                const message = JSON.parse(data.toString());
-                                this.onMessageCallback(message, ws);
-                            } catch (error) {
-                                console.error('Error parsing WS message:', error);
-                            }
-                        }
+                        this.emit('message', data, ws);
                     });
 
                     ws.on('close', () => {
                         console.log('Client disconnected');
                         this.clients.delete(ws);
+                        this.emit('disconnect', ws);
                     });
-
-                    ws.on('error', (error) => {
-                        console.error('WebSocket error:', error);
-                    });
-                });
-
-                this.wss.on('error', (error) => {
-                    console.error('WebSocket server error:', error);
-                    reject(error);
                 });
             } catch (error) {
                 reject(error);
@@ -81,10 +67,6 @@ export class WSServer {
 
     count(): number {
         return this.clients.size;
-    }
-
-    onMessage(callback: (data: any, ws: WebSocket) => void): void {
-        this.onMessageCallback = callback;
     }
 
     send(ws: WebSocket, data: any): void {
